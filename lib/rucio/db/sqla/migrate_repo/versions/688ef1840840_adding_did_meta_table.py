@@ -37,15 +37,15 @@ def upgrade():
     '''
 
     if context.get_context().dialect.name in ['oracle', 'mysql', 'postgresql']:
-        create_table('did_meta',
-                     sa.Column('scope', sa.String(25)),
-                     sa.Column('name', sa.String(255)),
-                     sa.Column('meta', JSON()))
+        # create_table('did_meta',
+        #              sa.Column('scope', sa.String(25)),
+        #              sa.Column('name', sa.String(255)),
+        #              sa.Column('meta', JSON()))
 
-        create_primary_key('DID_META_PK', 'did_meta', ['scope', 'name'])
-        create_foreign_key('DID_META_FK', 'did_meta', 'dids',
-                           ['scope', 'name'], ['scope', 'name'])
-
+        # create_primary_key('DID_META_PK', 'did_meta', ['scope', 'name'])
+        # create_foreign_key('DID_META_FK', 'did_meta', 'dids',
+        #                    ['scope', 'name'], ['scope', 'name'])
+        pass
 
 def downgrade():
     '''
@@ -53,4 +53,5 @@ def downgrade():
     '''
 
     if context.get_context().dialect.name in ['oracle', 'mysql', 'postgresql']:
-        drop_table('did_meta')
+        # drop_table('did_meta')
+        pass

@@ -23,10 +23,11 @@ from datetime import datetime, timedelta
 
 from nose.tools import assert_not_equal
 
+from rucio.client.didclient import DIDClient
 from rucio.common.types import InternalAccount, InternalScope
 from rucio.common.utils import generate_uuid
 from rucio.core.account_limit import set_account_limit
-from rucio.core.did import add_dids, attach_dids, list_expired_dids, get_did
+from rucio.core.did import add_dids, attach_dids, list_expired_dids, get_did, add_did_meta
 from rucio.core.replica import get_replica
 from rucio.core.rule import add_rules, list_rules
 from rucio.core.rse import get_rse_id, add_rse
@@ -64,6 +65,12 @@ class TestUndertaker:
 
         add_dids(dids=dsns1 + dsns2, account=root)
 
+        # Attache Generic metadata to did
+        did_client = DIDClient()
+        # did_client.add_did_meta(scope='mock',name='file_192528ee920b4a72b082d024e89645ef', meta={'test_key':'test_value'})
+        # did_client.add_did_meta(dsns1[0]['scope'], dsns1[0]['name'], {'test_key':'test_value'})
+        did_client.add_did_meta('mock', dsns1[0]['name'], {'test_key':'test_value'})
+
         replicas = list()
         for dsn in dsns1 + dsns2:
             files = [{'scope': tmp_scope, 'name': 'file_%s' % generate_uuid(),
@@ -79,6 +86,28 @@ class TestUndertaker:
 
         for replica in replicas:
             assert_not_equal(get_replica(scope=replica['scope'], name=replica['name'], rse_id=rse_id)['tombstone'], None)
+
+    def test_list_expired_dids_with_locked_rules(self):
+        """ UNDERTAKER (CORE): Test that the undertaker does not list expired dids with locked rules"""
+        tmp_scope = InternalScope('mock')
+        jdoe = InternalAccount('jdoe')
+        root = InternalAccount('root')
+
+        # Add quota
+        set_account_limit(jdoe, get_rse_id('MOCK'), -1)
+
+        dsn = {'name': 'dsn_%s' % generate_uuid(),
+               'scope': tmp_scope,
+               'type': 'DATASET',
+               'lifetime': -1,
+               'rules': [{'account': jdoe, 'copies': 1,
+                          'rse_expression': 'MOCK', 'locked': True,
+                          'grouping': 'DATASET'}]}
+
+        add_dids(dids=[dsn], account=root)
+
+        for did in list_expired_dids(limit=1000):
+            assert(did['scope'] != dsn['scope'] and did['name'] != dsn['name'])
 
     def test_list_expired_dids_with_locked_rules(self):
         """ UNDERTAKER (CORE): Test that the undertaker does not list expired dids with locked rules"""

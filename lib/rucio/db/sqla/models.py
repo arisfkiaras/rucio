@@ -370,6 +370,7 @@ class DataIdentifier(BASE, ModelBase):
     events = Column(BigInteger)
     guid = Column(GUID())
     project = Column(String(50))
+    project2 = Column(String(50))
     datatype = Column(String(50))
     run_number = Column(Integer)
     stream_name = Column(String(70))
@@ -385,6 +386,7 @@ class DataIdentifier(BASE, ModelBase):
     accessed_at = Column(DateTime)
     closed_at = Column(DateTime)
     eol_at = Column(DateTime)
+    random2 = Column(String(NAME_LENGTH))
     is_archive = Column(Boolean(name='DIDS_ARCHIVE_CHK'))
     constituent = Column(Boolean(name='DIDS_CONSTITUENT_CHK'))
     access_cnt = Column(Integer())
@@ -406,9 +408,10 @@ class DidMeta(BASE, ModelBase):
     scope = Column(InternalScopeString(SCOPE_LENGTH))
     name = Column(String(NAME_LENGTH))
     meta = Column(JSON())
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
     _table_args = (PrimaryKeyConstraint('scope', 'name', name='DID_META_PK'),
                    ForeignKeyConstraint(['scope', 'name'], ['dids.scope', 'dids.name'], name='DID_META_FK'),)
-
 
 class DeletedDataIdentifier(BASE, ModelBase):
     """Represents a dataset"""

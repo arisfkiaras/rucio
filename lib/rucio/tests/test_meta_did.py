@@ -45,7 +45,7 @@ class TestMetaDIDClient(object):
         self.did_client.add_dataset(scope=tmp_scope, name=tmp_dataset)
 
         # Add a key
-        key = 'project'
+        key = 'prodfject'
         value = 'data13_hip'
         self.did_client.set_metadata(scope=tmp_scope, name=tmp_dataset, key=key, value=value)
 

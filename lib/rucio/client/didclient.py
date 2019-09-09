@@ -644,6 +644,7 @@ class DIDClient(BaseClient):
         if r.status_code == codes.created:
             return True
         else:
+            print(r.text)
             exc_cls, exc_msg = self._get_exception(headers=r.headers, status_code=r.status_code, data=r.content)
             raise exc_cls(exc_msg)
 

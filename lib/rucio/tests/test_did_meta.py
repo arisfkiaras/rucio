@@ -28,32 +28,25 @@ class TestDidMetaClient():
 
     def test_add_did_meta(self):
         """ META (CLIENTS) : Adds a fully set json column to a did, updates if some keys present """
-        try:
-            data1 = {"key1": "value_" + str(uuid()), "key2": "value_" + str(uuid()), "key3": "value_" + str(uuid())}
-            self.did_client.add_did_meta(scope=self.tmp_scope, name=self.tmp_name, meta=data1)
+        data1 = {"key1": "value_" + str(uuid()), "key2": "value_" + str(uuid()), "key3": "value_" + str(uuid())}
+        self.did_client.add_did_meta(scope=self.tmp_scope, name=self.tmp_name, meta=data1)
+        metadata = self.did_client.get_did_meta(scope=self.tmp_scope, name=self.tmp_name)
+        assert_equal(len(metadata), 3)
+        assert_equal(metadata, data1)
+        data2 = {"key4": "value_" + str(uuid()), "key5": "value_" + str(uuid())}
+        self.did_client.add_did_meta(scope=self.tmp_scope, name=self.tmp_name, meta=data2)
+        metadata = self.did_client.get_did_meta(scope=self.tmp_scope, name=self.tmp_name)
+        assert_equal(len(metadata), 5)
+        assert_equal(metadata, dict(list(data1.items()) + list(data2.items())))
+        with assert_raises(DataIdentifierNotFound):
+            self.did_client.add_did_meta(scope=self.tmp_scope, name='Nimportnawak', meta=data1)
+        data3 = {"key2": "value2", "key6": "value6"}
+        self.did_client.add_did_meta(scope=self.tmp_scope, name=self.tmp_name, meta=data3)
+        metadata = self.did_client.get_did_meta(scope=self.tmp_scope, name=self.tmp_name)
+        assert_equal(len(metadata), 6)
+        assert_equal(metadata["key2"], "value2")
+        assert_equal("a", "b")
 
-            metadata = self.did_client.get_did_meta(scope=self.tmp_scope, name=self.tmp_name)
-            assert_equal(len(metadata), 3)
-            assert_equal(metadata, data1)
-
-            data2 = {"key4": "value_" + str(uuid()), "key5": "value_" + str(uuid())}
-            self.did_client.add_did_meta(scope=self.tmp_scope, name=self.tmp_name, meta=data2)
-
-            metadata = self.did_client.get_did_meta(scope=self.tmp_scope, name=self.tmp_name)
-            assert_equal(len(metadata), 5)
-            assert_equal(metadata, dict(list(data1.items()) + list(data2.items())))
-
-            with assert_raises(DataIdentifierNotFound):
-                self.did_client.add_did_meta(scope=self.tmp_scope, name='Nimportnawak', meta=data1)
-
-            data3 = {"key2": "value2", "key6": "value6"}
-            self.did_client.add_did_meta(scope=self.tmp_scope, name=self.tmp_name, meta=data3)
-            metadata = self.did_client.get_did_meta(scope=self.tmp_scope, name=self.tmp_name)
-            assert_equal(len(metadata), 6)
-            assert_equal(metadata["key2"], "value2")
-
-        except RucioException:
-            pass
 
     def test_delete_generic_metadata(self):
         """ META (CLIENTS) : Deletes metadata key """
