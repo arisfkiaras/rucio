@@ -24,25 +24,37 @@ from rucio.core import rse as rse_module, distance as distance_module, account a
 from rucio.db.sqla import models
 from rucio.db.sqla.constants import RSEType, AccountType, IdentityType
 from rucio.db.sqla.session import transactional_session
+from rucio.common.config import config_get, config_set
 
 
 @transactional_session
-def import_rses(rses, session=None):
+def import_rses(rses, session=None, rse_sync_method='edit', attr_method='hard', protocol_method='hard'):
     new_rses = []
     for rse_name in rses:
         rse = rses[rse_name]
         if isinstance(rse.get('rse_type'), string_types):
             rse['rse_type'] = RSEType.from_string(str(rse['rse_type']))
-        try:
+
+        if rse_module.rse_exists(rse_name, include_deleted=False):
+            # RSE exists and is active
             rse_id = rse_module.get_rse_id(rse=rse_name, session=session)
-        except RSENotFound:
+        elif rse_module.rse_exists(rse_name, include_deleted=True):
+            # RSE exists but in deleted state
+            # Should only modify the RSE if importer is on RSE edit mode
+            if rse_sync_method in ['edit', 'hard']:
+                rse_id = rse_module.get_rse_id(rse=rse_name, session=session, include_deleted=True)
+                rse_module.restore_rse(rse_id)
+            else:
+                # Config is in RSE append only mode, should not modify the disabled RSE
+                continue
+        else:
             rse_id = rse_module.add_rse(rse=rse_name, deterministic=rse.get('deterministic'), volatile=rse.get('volatile'),
                                         city=rse.get('city'), region_code=rse.get('region_code'), country_name=rse.get('country_name'),
                                         staging_area=rse.get('staging_area'), continent=rse.get('continent'), time_zone=rse.get('time_zone'),
                                         ISP=rse.get('ISP'), rse_type=rse.get('rse_type'), latitude=rse.get('latitude'),
                                         longitude=rse.get('longitude'), ASN=rse.get('ASN'), availability=rse.get('availability'),
                                         session=session)
-        else:
+        if rse_sync_method in ['edit', 'hard']:
             rse_module.update_rse(rse_id=rse_id, parameters=rse, session=session)
 
         new_rses.append(rse_id)
@@ -67,11 +79,12 @@ def import_rses(rses, session=None):
             for protocol in missing_protocols:
                 rse_module.add_protocol(rse_id=rse_id, parameter=protocol, session=session)
 
-            for protocol in to_be_removed_protocols:
-                scheme = protocol['scheme']
-                port = protocol['port']
-                hostname = protocol['hostname']
-                rse_module.del_protocols(rse_id=rse_id, scheme=scheme, port=port, hostname=hostname, session=session)
+            if rse_sync_method == 'hard':
+                for protocol in to_be_removed_protocols:
+                    scheme = protocol['scheme']
+                    port = protocol['port']
+                    hostname = protocol['hostname']
+                    rse_module.del_protocols(rse_id=rse_id, scheme=scheme, port=port, hostname=hostname, session=session)
 
         # Limits
         old_limits = rse_module.get_rse_limits(rse_id=rse_id, session=session)
@@ -97,12 +110,13 @@ def import_rses(rses, session=None):
 
     # set deleted flag to RSEs that are missing in the import data
     old_rses = [old_rse['id'] for old_rse in rse_module.list_rses(session=session)]
-    for old_rse in old_rses:
-        if old_rse not in new_rses:
-            try:
-                rse_module.del_rse(rse_id=old_rse, session=session)
-            except RSEOperationNotSupported:
-                pass
+    if rse_sync_method == 'hard':
+        for old_rse in old_rses:
+            if old_rse not in new_rses:
+                try:
+                    rse_module.del_rse(rse_id=old_rse, session=session)
+                except RSEOperationNotSupported:
+                    pass
 
 
 @transactional_session
@@ -201,10 +215,14 @@ def import_data(data, session=None):
     :param data: data to be imported as dictionary.
     :param session: database session in use.
     """
+    # sync_method = config_get()
     # RSEs
+    # config_set('importer', 'rse_sync_method', 'hard')
+
+    rse_sync_method = config_get('importer', 'rse_sync_method', False, 'edit')
     rses = data.get('rses')
     if rses:
-        import_rses(rses, session=session)
+        import_rses(rses, session=session, rse_sync_method=rse_sync_method)
 
     # Distances
     distances = data.get('distances')

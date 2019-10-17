@@ -28,6 +28,7 @@ from rucio.db.sqla import session, models
 from rucio.db.sqla.constants import RSEType, AccountType, IdentityType, AccountStatus
 from rucio.client.importclient import ImportClient
 from rucio.client.exportclient import ExportClient
+from rucio.common.config import config_set, config_add_section, config_has_section
 from rucio.common.exception import RSENotFound
 from rucio.common.types import InternalAccount
 from rucio.common.utils import render_json, parse_response
@@ -35,7 +36,7 @@ from rucio.core.account import add_account, get_account
 from rucio.core.distance import add_distance, get_distances
 from rucio.core.exporter import export_data, export_rses
 from rucio.core.identity import add_identity, list_identities, add_account_identity, list_accounts_for_identity
-from rucio.core.importer import import_data
+from rucio.core.importer import import_data, import_rses
 from rucio.core.rse import get_rse_id, get_rse_name, add_rse, get_rse, add_protocol, get_rse_protocols, list_rse_attributes, get_rse_limits, set_rse_limits, add_rse_attribute, list_rses, export_rse, get_rse_attribute
 from rucio.tests.common import rse_name_generator
 from rucio.web.rest.importer import APP as import_app
@@ -84,8 +85,15 @@ def reset_rses():
 
 
 class TestImporter(object):
+    """ Tests the initial import method (hard-sync everything) """
 
     def setup(self):
+        if not config_has_section('importer'):
+            config_add_section('importer')
+        config_set('importer', 'rse_sync_method', 'hard')
+        config_set('importer', 'attr_method', 'hard')
+        config_set('importer', 'protocol_method', 'hard')
+
         # New RSE
         self.new_rse = rse_name_generator()
 
@@ -352,6 +360,7 @@ class TestImporter(object):
         assert_equal(limits['MinFreeSpace'], 20000)
 
         # RSE 1 that already exists
+        print("1:%s" % self.old_rse_1)
         check_rse(self.old_rse_1, self.data1['rses'])
         check_protocols(self.old_rse_1, self.data1['rses'])
 
@@ -434,6 +443,165 @@ class TestImporter(object):
         assert_equal(r2.status, 201)
 
 
+class TestImporterSyncModes(object):
+
+    def setup(self):
+        # New RSE
+        self.new_rse = rse_name_generator()
+
+        # RSE missing from the json
+        self.rucio_only_rse = rse_name_generator()
+        self.rucio_only_rse_id = add_rse(self.rucio_only_rse)
+
+        # RSE with less protocols/attr
+        self.less_prot_rse = rse_name_generator()
+        self.less_prot_rse_id = add_rse(self.less_prot_rse, availability=1, region_code='DE', country_name='DE', deterministic=True, volatile=True, staging_area=True, time_zone='Europe', latitude='1', longitude='2')
+        add_protocol(self.less_prot_rse_id, {'scheme': 'scheme1', 'hostname': 'hostname1', 'port': 1000, 'impl': 'impl1'})
+        add_protocol(self.less_prot_rse_id, {'scheme': 'scheme2', 'hostname': 'hostname2', 'port': 1000, 'impl': 'impl'})
+        add_rse_attribute(rse_id=self.less_prot_rse_id, key='attr1', value='test1')
+
+        # RSE with different values on protocol
+        self.existing_rse = rse_name_generator()
+        self.existing_rse_id = add_rse(self.existing_rse)
+
+        # RSE identical on json and Rucio
+        self.identical_rse = rse_name_generator()
+        self.identical_rse_id = add_rse(self.identical_rse)
+
+        self.data1 = {
+            'rses': {
+                self.new_rse: {
+                    'rse_type': RSEType.TAPE,
+                    'availability': 3,
+                    'city': 'NewCity',
+                    'region_code': 'CH',
+                    'country_name': 'switzerland',
+                    'staging_area': False,
+                    'time_zone': 'Europe',
+                    'latitude': 1,
+                    'longitude': 2,
+                    'deterministic': True,
+                    'volatile': False,
+                    'protocols': [{
+                        'scheme': 'scheme',
+                        'hostname': 'hostname',
+                        'port': 1000,
+                        'impl': 'impl'
+                    }],
+                    'attributes': {
+                        'attr1': 'test'
+                    },
+                    'MinFreeSpace': 20000,
+                    'lfn2pfn_algorithm': 'hash2',
+                    'verify_checksum': False,
+                    'availability_delete': True,
+                    'availability_read': False,
+                    'availability_write': True
+                },
+                self.less_prot_rse: {
+                    'rse_type': RSEType.TAPE,
+                    'deterministic': True,
+                    'volatile': True,
+                    'region_code': 'DE',
+                    'country_name': 'DE',
+                    'staging_area': False,
+                    'time_zone': 'Europe',
+                    'longitude': 2,
+                    'city': 'City',
+                    'availability': 1,
+                    'latitude': 1,
+                    'protocols': [{
+                        'scheme': 'scheme1',
+                        'hostname': 'hostname1',
+                        'port': 1000,
+                        'prefix': 'prefix',
+                        'impl': 'impl1'
+                    }, {
+                        'scheme': 'scheme2',
+                        'hostname': 'hostname2',
+                        'port': 1001,
+                        'impl': 'impl'
+                    }, {
+                        'scheme': 'scheme3',
+                        'hostname': 'hostname3',
+                        'port': 1001,
+                        'impl': 'impl'
+                    }],
+                    'attributes': {
+                        'attr1': 'test1',
+                        'attr2': 'test2'
+                    },
+                    'MinFreeSpace': 10000,
+                    'MaxBeingDeletedFiles': 1000,
+                    'verify_checksum': False,
+                    'lfn2pfn_algorithm': 'hash3',
+                    'availability_delete': False,
+                    'availability_read': False,
+                    'availability_write': True
+                }
+            }
+        }
+
+        self.data_edit {
+
+        }
+
+    def test_import_rses_append(self):
+        import_rses(rses=deepcopy(self.data1['rses']), rse_sync_method='append')
+        # RSE that did not exist before
+        check_rse(self.new_rse, self.data1['rses'])
+        check_protocols(self.new_rse, self.data1['rses'])
+
+        # RSE missing from json
+        # Need to make sure that this RSE did not deleted
+        assert_equal(get_rse_id(self.rucio_only_rse, include_deleted=False), self.rucio_only_rse_id)
+
+        # RSE with modified attributes
+        # Need to make sure that attributes where not changed
+        pass
+
+    def test_import_rses_edit(self):
+        # Make sure that does not deactivate missing from json
+        # Activates the one that was disabled on Rucio
+        pass
+
+    def test_import_attributes_hard(self):
+        # Have an attribute that needs edit
+        # Have an attribute that needs to be deleted
+
+        pass
+
+    def test_import_attributes_append(self):
+        pass
+
+    def test_import_attributes_edit(self):
+        pass
+
+    def test_import_protocols_edit(self):
+        # Check that the values of protocols is changed
+        # Check that protocols that do not appear do not get removed
+        # Check that protocols that are new are appended
+        pass
+
+    def test_import_protocols_append(self):
+        # Check that protocols that are new are appended
+        # Check that protocols that do not appear do not get removed
+        # Check that protocols that have different values, do not get modified
+        pass
+
+    def test_import_protocols_hard(self):
+        # Check that protocols that do not exist get delete
+        # Check that protocols that are modified get modified
+        # Check that protocols that new get appended
+        pass
+
+    def test_import_rses_edit(self):
+        """ This functionality is tested on sync-mode hard """
+        # Check that protocols that have different values get modified
+        # Check that protocols that do not exist, do not get deleted
+        pass
+
+
 class TestExporter(object):
 
     def setup(self):
@@ -500,6 +668,12 @@ class TestExportImport(object):
 
     def test_export_import(self):
         """ IMPORT/EXPORT (REST): Test the export and import of data together to check same syntax."""
+        if not config_has_section('importer'):
+            config_add_section('importer')
+            config_set('importer', 'rse_sync_method', 'hard')
+            config_set('importer', 'attr_method', 'hard')
+            config_set('importer', 'protocol_method', 'hard')
+
         # Setup new RSE, distance, attribute, limits
         new_rse = rse_name_generator()
         add_rse(new_rse)
