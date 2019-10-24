@@ -29,7 +29,7 @@ from rucio.db.sqla.constants import RSEType, AccountType, IdentityType, AccountS
 from rucio.client.importclient import ImportClient
 from rucio.client.exportclient import ExportClient
 from rucio.common.config import config_set, config_add_section, config_has_section
-from rucio.common.exception import RSENotFound, RSEAttributeNotFound
+from rucio.common.exception import RSENotFound
 from rucio.common.types import InternalAccount
 from rucio.common.utils import render_json, parse_response
 from rucio.core.account import add_account, get_account
@@ -567,7 +567,6 @@ class TestImporterSyncModes(object):
 
         # RSE that did not exist before
         new_rse = rse_name_generator()
-        new_rse_id = add_rse(new_rse)
 
         # RSE missing from json
         old_rse = rse_name_generator()

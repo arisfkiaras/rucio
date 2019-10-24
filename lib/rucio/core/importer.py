@@ -19,12 +19,12 @@
 # PY3K COMPATIBLE
 
 from six import string_types
-from rucio.common.exception import RSEOperationNotSupported, RSENotFound, RSEAttributeNotFound
+from rucio.common.exception import RSEOperationNotSupported
 from rucio.core import rse as rse_module, distance as distance_module, account as account_module, identity as identity_module
 from rucio.db.sqla import models
 from rucio.db.sqla.constants import RSEType, AccountType, IdentityType
 from rucio.db.sqla.session import transactional_session
-from rucio.common.config import config_get, config_set
+from rucio.common.config import config_get
 
 
 @transactional_session
