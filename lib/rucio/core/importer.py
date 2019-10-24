@@ -19,7 +19,7 @@
 # PY3K COMPATIBLE
 
 from six import string_types
-from rucio.common.exception import RSEOperationNotSupported, RSENotFound
+from rucio.common.exception import RSEOperationNotSupported, RSENotFound, RSEAttributeNotFound
 from rucio.core import rse as rse_module, distance as distance_module, account as account_module, identity as identity_module
 from rucio.db.sqla import models
 from rucio.db.sqla.constants import RSEType, AccountType, IdentityType
@@ -28,7 +28,7 @@ from rucio.common.config import config_get, config_set
 
 
 @transactional_session
-def import_rses(rses, session=None, rse_sync_method='edit', attr_method='hard', protocol_method='hard'):
+def import_rses(rses, session=None, rse_sync_method='edit', attr_sync_method='hard', protocol_sync_method='hard'):
     new_rses = []
     for rse_name in rses:
         rse = rses[rse_name]
@@ -67,6 +67,10 @@ def import_rses(rses, session=None, rse_sync_method='edit', attr_method='hard', 
             outdated_protocols = [new_protocol for new_protocol in new_protocols if {'scheme': new_protocol['scheme'], 'hostname': new_protocol['hostname'], 'port': new_protocol['port']} in old_protocols]
             new_protocols = [{'scheme': protocol['scheme'], 'hostname': protocol['hostname'], 'port': protocol['port']} for protocol in new_protocols]
             to_be_removed_protocols = [old_protocol for old_protocol in old_protocols if old_protocol not in new_protocols]
+
+            if protocol_sync_method == 'append':
+                outdated_protocols = []
+
             for protocol in outdated_protocols:
                 scheme = protocol['scheme']
                 port = protocol['port']
@@ -79,7 +83,7 @@ def import_rses(rses, session=None, rse_sync_method='edit', attr_method='hard', 
             for protocol in missing_protocols:
                 rse_module.add_protocol(rse_id=rse_id, parameter=protocol, session=session)
 
-            if rse_sync_method == 'hard':
+            if protocol_sync_method == 'hard':
                 for protocol in to_be_removed_protocols:
                     scheme = protocol['scheme']
                     port = protocol['port']
@@ -101,12 +105,21 @@ def import_rses(rses, session=None, rse_sync_method='edit', attr_method='hard', 
         attributes['verify_checksum'] = rse.get('verify_checksum')
 
         old_attributes = rse_module.list_rse_attributes(rse_id=rse_id, session=session)
+        missing_attributes = [attribute for attribute in old_attributes if attribute not in attributes]
+
         for attr in attributes:
             value = attributes[attr]
             if value is not None:
                 if attr in old_attributes:
+                    if attr_sync_method not in ['append']:
+                        rse_module.del_rse_attribute(rse_id=rse_id, key=attr, session=session)
+                        rse_module.add_rse_attribute(rse_id=rse_id, key=attr, value=value, session=session)
+                else:
+                    rse_module.add_rse_attribute(rse_id=rse_id, key=attr, value=value, session=session)
+        if attr_sync_method == 'hard':
+            for attr in missing_attributes:
+                if attr != rse_name:
                     rse_module.del_rse_attribute(rse_id=rse_id, key=attr, session=session)
-                rse_module.add_rse_attribute(rse_id=rse_id, key=attr, value=value, session=session)
 
     # set deleted flag to RSEs that are missing in the import data
     old_rses = [old_rse['id'] for old_rse in rse_module.list_rses(session=session)]
