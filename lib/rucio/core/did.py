@@ -60,6 +60,7 @@ from rucio.db.sqla.constants import DIDType, DIDReEvaluation, DIDAvailability, R
 from rucio.db.sqla.enum import EnumSymbol
 from rucio.db.sqla.session import read_session, transactional_session, stream_session
 
+from rucio.core.did_meta import set_did_meta_interface, get_did_meta_interface, delete_did_meta_interface
 
 logging.basicConfig(stream=sys.stdout,
                     level=getattr(logging,
@@ -1203,7 +1204,7 @@ def get_files(files, session=None):
                 raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % file)
     return rows
 
-
+# Set metadata
 @transactional_session
 def set_metadata(scope, name, key, value, type=None, did=None,
                  recursive=False, session=None):
@@ -1218,93 +1219,9 @@ def set_metadata(scope, name, key, value, type=None, did=None,
     :param recursive: Option to propagate the metadata change to content.
     :param session: The database session in use.
     """
-    try:
-        rowcount = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).\
-            with_hint(models.DataIdentifier, "INDEX(DIDS DIDS_PK)", 'oracle').one()
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("Data identifier '%s:%s' not found" % (scope, name))
+    return set_did_meta_interface(scope, name, key, value, type, did, recursive, session)
 
-    if key == 'lifetime':
-        try:
-            expired_at = None
-            if value is not None:
-                expired_at = datetime.utcnow() + timedelta(seconds=float(value))
-            rowcount = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).update({'expired_at': expired_at}, synchronize_session='fetch')
-        except TypeError as error:
-            raise exception.InvalidValueForKey(error)
-    elif key in ['guid', 'events']:
-        rowcount = session.query(models.DataIdentifier).filter_by(scope=scope, name=name, did_type=DIDType.FILE).update({key: value}, synchronize_session=False)
-
-        session.query(models.DataIdentifierAssociation).filter_by(child_scope=scope, child_name=name, child_type=DIDType.FILE).update({key: value}, synchronize_session=False)
-        if key == 'events':
-            for parent_scope, parent_name in session.query(models.DataIdentifierAssociation.scope, models.DataIdentifierAssociation.name).filter_by(child_scope=scope, child_name=name):
-                events = session.query(func.sum(models.DataIdentifierAssociation.events)).filter_by(scope=parent_scope, name=parent_name).one()[0]
-                session.query(models.DataIdentifier).filter_by(scope=parent_scope, name=parent_name).update({'events': events}, synchronize_session=False)
-
-    elif key == 'adler32':
-        rowcount = session.query(models.DataIdentifier).filter_by(scope=scope, name=name, did_type=DIDType.FILE).update({key: value}, synchronize_session=False)
-        session.query(models.DataIdentifierAssociation).filter_by(child_scope=scope, child_name=name, child_type=DIDType.FILE).update({key: value}, synchronize_session=False)
-        session.query(models.Request).filter_by(scope=scope, name=name).update({key: value}, synchronize_session=False)
-        session.query(models.RSEFileAssociation).filter_by(scope=scope, name=name).update({key: value}, synchronize_session=False)
-
-    elif key == 'bytes':
-        rowcount = session.query(models.DataIdentifier).filter_by(scope=scope, name=name, did_type=DIDType.FILE).update({key: value}, synchronize_session=False)
-        session.query(models.DataIdentifierAssociation).filter_by(child_scope=scope, child_name=name, child_type=DIDType.FILE).update({key: value}, synchronize_session=False)
-        session.query(models.Request).filter_by(scope=scope, name=name).update({key: value}, synchronize_session=False)
-
-        for account, bytes, rse_id, rule_id in session.query(models.ReplicaLock.account, models.ReplicaLock.bytes, models.ReplicaLock.rse_id, models.ReplicaLock.rule_id).filter_by(scope=scope, name=name):
-            session.query(models.ReplicaLock).filter_by(scope=scope, name=name, rule_id=rule_id, rse_id=rse_id).update({key: value}, synchronize_session=False)
-            account_counter.decrease(rse_id=rse_id, account=account, files=1, bytes=bytes, session=session)
-            account_counter.increase(rse_id=rse_id, account=account, files=1, bytes=value, session=session)
-
-        for bytes, rse_id in session.query(models.RSEFileAssociation.bytes, models.RSEFileAssociation.rse_id).filter_by(scope=scope, name=name):
-            session.query(models.RSEFileAssociation).filter_by(scope=scope, name=name, rse_id=rse_id).update({key: value}, synchronize_session=False)
-            rse_counter.decrease(rse_id=rse_id, files=1, bytes=bytes, session=session)
-            rse_counter.increase(rse_id=rse_id, files=1, bytes=value, session=session)
-
-        for parent_scope, parent_name in session.query(models.DataIdentifierAssociation.scope, models.DataIdentifierAssociation.name).filter_by(child_scope=scope, child_name=name):
-
-            values = {}
-            values['length'], values['bytes'], values['events'] = session.query(func.count(models.DataIdentifierAssociation.scope),
-                                                                                func.sum(models.DataIdentifierAssociation.bytes),
-                                                                                func.sum(models.DataIdentifierAssociation.events)).filter_by(scope=parent_scope, name=parent_name).one()
-            session.query(models.DataIdentifier).filter_by(scope=parent_scope, name=parent_name).update(values, synchronize_session=False)
-            session.query(models.DatasetLock).filter_by(scope=parent_scope, name=parent_name).update({'length': values['length'], 'bytes': values['bytes']}, synchronize_session=False)
-    else:
-        try:
-            rowcount = session.query(models.DataIdentifier).\
-                with_hint(models.DataIdentifier, "INDEX(DIDS DIDS_PK)", 'oracle').\
-                filter_by(scope=scope, name=name).\
-                update({key: value}, synchronize_session='fetch')
-        except CompileError as error:
-            raise exception.InvalidMetadata(error)
-        except InvalidRequestError as error:
-            raise exception.InvalidMetadata("Key %s is not accepted" % key)
-
-        # propagate metadata updates to child content
-        if recursive:
-            content_query = session.query(models.DataIdentifierAssociation.child_scope,
-                                          models.DataIdentifierAssociation.child_name).\
-                with_hint(models.DataIdentifierAssociation,
-                          "INDEX(CONTENTS CONTENTS_PK)", 'oracle').\
-                filter_by(scope=scope, name=name)
-
-            for child_scope, child_name in content_query:
-                try:
-                    session.query(models.DataIdentifier).\
-                        with_hint(models.DataIdentifier, "INDEX(DIDS DIDS_PK)", 'oracle').\
-                        filter_by(scope=child_scope, name=child_name).\
-                        update({key: value}, synchronize_session='fetch')
-                except CompileError as error:
-                    raise exception.InvalidMetadata(error)
-                except InvalidRequestError as error:
-                    raise exception.InvalidMetadata("Key %s is not accepted" % key)
-
-    if not rowcount:
-        # check for did presence
-        raise exception.UnsupportedOperation('%(key)s for %(scope)s:%(name)s cannot be updated' % locals())
-
-
+# Get metadata
 @read_session
 def get_metadata(scope, name, session=None):
     """
@@ -1314,17 +1231,9 @@ def get_metadata(scope, name, session=None):
     :param name: The data identifier name.
     :param session: The database session in use.
     """
-    try:
-        row = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).\
-            with_hint(models.DataIdentifier, "INDEX(DIDS DIDS_PK)", 'oracle').one()
-        d = {}
-        for column in row.__table__.columns:
-            d[column.name] = getattr(row, column.name)
-        return d
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % locals())
+    return get_did_meta_interface(scope, name, session=session)
 
-
+# Get generic did metadata
 @read_session
 def get_did_meta(scope, name, session=None):
     """
@@ -1333,19 +1242,9 @@ def get_did_meta(scope, name, session=None):
     :param scope: the scope of did
     :param name: the name of the did
     """
-    if session.bind.dialect.name == 'oracle':
-        oracle_version = int(session.connection().connection.version.split('.')[0])
-        if oracle_version < 12:
-            raise NotImplementedError
+    return get_did_meta_interface(scope, name, filter="JSON", session=session)
 
-    try:
-        row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
-        meta = getattr(row, 'meta')
-        return json.loads(meta) if session.bind.dialect.name in ['oracle', 'sqlite'] else meta
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("No generic metadata found for '%(scope)s:%(name)s'" % locals())
-
-
+# Set generic did metadata
 @transactional_session
 def add_did_meta(scope, name, meta, session=None):
     """
@@ -1355,43 +1254,10 @@ def add_did_meta(scope, name, meta, session=None):
     :param name: the name of the did
     :param meta: the metadata to be added or updated
     """
-    if session.bind.dialect.name == 'oracle':
-        oracle_version = int(session.connection().connection.version.split('.')[0])
-        if oracle_version < 12:
-            raise NotImplementedError
+    for k, v in iteritems(meta):
+        set_did_meta_interface(scope, name, key=k, value=v, session=session)
 
-    try:
-        row_did = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).one()
-        row_did_meta = session.query(models.DidMeta).filter_by(scope=scope, name=name).scalar()
-        if row_did_meta is None:
-            # Add metadata column to new table (if not already present)
-            row_did_meta = models.DidMeta(scope=scope, name=name)
-            row_did_meta.save(session=session, flush=True)
-
-        existing_meta = getattr(row_did_meta, 'meta')
-
-        # Oracle returns a string instead of a dict
-        if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
-            existing_meta = json.loads(existing_meta)
-
-        if existing_meta is None:
-            existing_meta = {}
-
-        for k, v in iteritems(meta):
-            existing_meta[k] = v
-
-        row_did_meta.meta = None
-        session.flush()
-
-        # Oracle insert takes a string as input
-        if session.bind.dialect.name in ['oracle', 'sqlite']:
-            existing_meta = json.dumps(existing_meta)
-
-        row_did_meta.meta = existing_meta
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % locals())
-
-
+# Delete generic did metadata
 @transactional_session
 def delete_did_meta(scope, name, key, session=None):
     """
@@ -1401,35 +1267,9 @@ def delete_did_meta(scope, name, key, session=None):
     :param name: the name of the did
     :param key: the key to be deleted
     """
-    if session.bind.dialect.name == 'oracle':
-        oracle_version = int(session.connection().connection.version.split('.')[0])
-        if oracle_version < 12:
-            raise NotImplementedError
+    delete_did_meta_interface(scope, name, key, session=session)
 
-    try:
-        row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
-        existing_meta = getattr(row, 'meta')
-        # Oracle returns a string instead of a dict
-        if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
-            existing_meta = json.loads(existing_meta)
-
-        if key not in existing_meta:
-            raise exception.KeyNotFound(key)
-
-        existing_meta.pop(key, None)
-
-        row.meta = None
-        session.flush()
-
-        # Oracle insert takes a string as input
-        if session.bind.dialect.name in ['oracle', 'sqlite']:
-            existing_meta = json.dumps(existing_meta)
-
-        row.meta = existing_meta
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("Key not found for data identifier '%(scope)s:%(name)s'" % locals())
-
-
+# List did by generic meta
 @read_session
 def list_dids_by_meta(scope, select, session=None):
     """
@@ -1518,7 +1358,7 @@ def set_status(scope, name, session=None, **kwargs):
             for rule in rules_on_ds:
                 rucio.core.rule.generate_rule_notifications(rule=rule, session=session)
 
-
+# List did by a lot of things
 @stream_session
 def list_dids(scope, filters, type='collection', ignore_case=False, limit=None,
               offset=None, long=False, recursive=False, session=None):
