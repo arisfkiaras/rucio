@@ -18,7 +18,6 @@ import rucio.core.rule
 import rucio.core.replica  # import add_replicas
 
 from rucio.common import exception
-from rucio.common.config import config_get
 from rucio.common.utils import str_to_date, is_archive, chunks
 from rucio.core import account_counter, rse_counter, config as config_core
 from rucio.core.message import add_message
@@ -28,6 +27,198 @@ from rucio.db.sqla import models
 from rucio.db.sqla.constants import DIDType, DIDReEvaluation, DIDAvailability, RuleState
 from rucio.db.sqla.enum import EnumSymbol
 from rucio.db.sqla.session import read_session, transactional_session, stream_session
+from rucio.core.exception
+
+try:
+    from ConfigParser import NoOptionError, NoSectionError
+except ImportError:
+    from configparser import NoOptionError, NoSectionError
+
+from rucio.common import config
+
+
+class JSON_METADATA_HANDLER(object):
+
+    SUPPORTED_OPERATIONS = [
+        "SET",
+        "GET",
+        "LIST",
+        "DELETE",
+        "QUERY",
+        "COMPARATORS",
+        "FILTER_QUERY",
+        "LONG"
+    ]
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def supports(self, session=None):
+        pass
+
+    def get_did_meta(self, scope, name, session=None):
+        """
+        Get data identifier metadata (JSON)
+
+        :param scope: The scope name.
+        :param name: The data identifier name.
+        :param session: The database session in use.
+        """
+        if not _json_implemented():
+            raise NotImplementedError
+
+        try:
+            row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
+            meta = getattr(row, 'meta')
+            return json.loads(meta) if session.bind.dialect.name in ['oracle', 'sqlite'] else meta
+        except NoResultFound:
+            # raise exception.DataIdentifierNotFound("No generic metadata found for '%(scope)s:%(name)s'" % locals())
+            return None
+
+    def get_did_meta_value(self):
+        pass
+
+    @transactional_session
+    def set_did_meta(self):
+        """
+        Add or update the given metadata to the given did
+
+        :param scope: the scope of the did
+        :param name: the name of the did
+        :param meta: the metadata to be added or updated
+        """
+        if not json_meta_implemented():
+            raise NotImplementedError
+
+        try:
+            row_did = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).one()
+            row_did_meta = session.query(models.DidMeta).filter_by(scope=scope, name=name).scalar()
+            if row_did_meta is None:
+                # Add metadata column to new table (if not already present)
+                row_did_meta = models.DidMeta(scope=scope, name=name)
+                row_did_meta.save(session=session, flush=True)
+
+            existing_meta = getattr(row_did_meta, 'meta')
+
+            # Oracle returns a string instead of a dict
+            if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
+                existing_meta = json.loads(existing_meta)
+
+            if existing_meta is None:
+                existing_meta = {}
+
+            for k, v in iteritems(meta):
+                existing_meta[k] = v
+
+            row_did_meta.meta = None
+            session.flush()
+
+            # Oracle insert takes a string as input
+            if session.bind.dialect.name in ['oracle', 'sqlite']:
+                existing_meta = json.dumps(existing_meta)
+
+            row_did_meta.meta = existing_meta
+        except NoResultFound:
+            raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % locals())
+
+    @transactional_session
+    def delete_did_meta(self):
+        """
+        Delete a key from the metadata column
+
+        :param scope: the scope of did
+        :param name: the name of the did
+        :param key: the key to be deleted
+        """
+        if not json_meta_implemented(session=session):
+            raise NotImplementedError
+
+        try:
+            row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
+            existing_meta = getattr(row, 'meta')
+            # Oracle returns a string instead of a dict
+            if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
+                existing_meta = json.loads(existing_meta)
+
+            if key not in existing_meta:
+                raise exception.KeyNotFound(key)
+
+            existing_meta.pop(key, None)
+
+            row.meta = None
+            session.flush()
+
+            # Oracle insert takes a string as input
+            if session.bind.dialect.name in ['oracle', 'sqlite']:
+                existing_meta = json.dumps(existing_meta)
+
+            row.meta = existing_meta
+        except NoResultFound:
+            raise exception.DataIdentifierNotFound("Key not found for data identifier '%(scope)s:%(name)s'" % locals())
+
+    def list_dids(self, scope=None, filters=None, type=None, ignore_case=False, limit=None,
+                  offset=None, long=False, recursive=False, session=None):
+        # Currently for sqlite only add, get and delete is implemented.
+        if session.bind.dialect.name == 'sqlite':
+            raise NotImplementedError
+        if session.bind.dialect.name == 'oracle':
+            oracle_version = int(session.connection().connection.version.split('.')[0])
+            if oracle_version < 12:
+                raise NotImplementedError
+
+        query = session.query(models.DidMeta)
+        if scope is not None:
+            query = query.filter(models.DidMeta.scope == scope)
+
+        for k, v in iteritems(select):
+            if session.bind.dialect.name == 'oracle':
+                query = query.filter(text("json_exists(meta,'$.%s?(@==''%s'')')" % (k, v)))
+            else:
+                query = query.filter(cast(models.DidMeta.meta[k], String) == type_coerce(v, JSON))
+        dids = list()
+        for row in query.yield_per(10):
+            dids.append({'scope': row.scope, 'name': row.name})
+        return dids
+
+    def filter_query(self):
+        pass
+
+    def _json_implemented(session=None):
+        """
+        Checks if the database on the current server installation can support json fields.
+        Check if did meta json table exists.
+
+        :param session: (Optional) The active session of the database.
+
+        :returns: True, if json is supported, False otherwise.
+        """
+
+        if session.bind.dialect.name == 'oracle':
+            oracle_version = int(session.connection().connection.version.split('.')[0])
+            if oracle_version < 12:
+                return False
+        #TODO: check for the table here
+        return True
+
+def validate_package():
+    """
+    Checks to see that package loaded has the minimum methods needed
+    """
+    pass
+
+
+FALLBACK_METADATA_HANDLER = JSON_METADATA_HANDLER
+
+if config.config_has_section('metadata'):
+    try:
+        METADATA_HANDLER = config.config_get('metadata', 'package')
+
+    except (NoOptionError, NoSectionError) as error:
+        # fall back to old system for now
+        METADATA_HANDLER = FALLBACK_METADATA_HANDLER
+else:
+    METADATA_HANDLER = FALLBACK_METADATA_HANDLER
 
 
 HARDCODED_KEYS = [
@@ -87,26 +278,10 @@ def is_hardcoded(key):
     :returns: True, if hardcoded, False otherwise.
     """
 
-    if key in HARDCODED_KEYS or hasattr(models.DataIdentifier, key):
+    if key in HARDCODED_KEYS:# or hasattr(models.DataIdentifier, key):
         return True
 
     return False
-
-
-def json_meta_implemented(session=None):
-    """
-    Checks if the database on the current server installation can support json fields.
-
-    :param session: (Optional) The active session of the database.
-
-    :returns: True, if hardcoded, False otherwise.
-    """
-
-    if session.bind.dialect.name == 'oracle':
-        oracle_version = int(session.connection().connection.version.split('.')[0])
-        if oracle_version < 12:
-            return False
-    return True
 
 
 def get_did_meta_interface(scope, name, filter="ALL", session=None):
@@ -127,7 +302,7 @@ def get_did_meta_interface(scope, name, filter="ALL", session=None):
         if hardcoded_meta:
             all_meta.update(hardcoded_meta)
 
-        generic_meta = _get_did_meta_json(scope, name, session=session)
+        generic_meta = _get_generic_did_meta(scope, name, session=session)
         if generic_meta:
             all_meta.update(generic_meta)
 
@@ -135,7 +310,7 @@ def get_did_meta_interface(scope, name, filter="ALL", session=None):
     elif filter == "HARDCODED":
         return _get_did_meta_hardcoded(scope, name, session=session)
     elif filter == "JSON":
-        return _get_did_meta_json(scope, name, session=session)
+        return _get_generic_did_meta(scope, name, session=session)
 
 
 def set_did_meta_interface(scope, name, key, value, did=None,
@@ -156,13 +331,12 @@ def set_did_meta_interface(scope, name, key, value, did=None,
     :param filter: (Optional) Filter down to specific metadata storages [ALL|HARDCODED|JSON]
     """
 
-    metadata_store = "config_value"
     if is_hardcoded(key):
         _set_did_meta_hardcoded(scope, name, key, value, did, recursive, session=session)
-    elif metadata_store == "get_config":
-        pass
     else:
-        _add_did_meta_json(scope, name, {key: value}, session=session)
+        _set_generic_did_meta(scope, name, key, value, session=session)
+    else:
+        raise NotImplementedError
 
 
 def delete_did_meta_interface(scope, name, key, session=None):
@@ -178,6 +352,11 @@ def delete_did_meta_interface(scope, name, key, session=None):
         pass
     else:
         _delete_did_meta_json(scope, name, key, session=session)
+
+
+def list_dids_interface(scope=None, filters=None, type=None, ignore_case=False, limit=None,
+                        offset=None, long=False, recursive=False, session=None):
+    pass
 
 
 def filter_query_by_meta_interface(scope, filters, query):
@@ -210,20 +389,6 @@ def filter_query_by_meta_interface(scope, filters, query):
         query = _filter_by_did_meta_json(filters, query)
 
     return query
-
-
-def list_did_meta():
-    """
-    return triplet with types of data
-    on the rucio client print them like
-    Core metadata:
-        lifetime: 1
-    Generic metadata:
-        key: value
-    External metadata:
-        fae = asd
-    """
-    raise NotImplementedError
 
 
 @transactional_session
@@ -392,107 +557,6 @@ def _filter_by_did_meta_hardcoded(filters, query):
     return query
 
 
-def _get_did_meta_json(scope, name, session=None):
-    """
-    Get data identifier metadata (JSON)
-
-    :param scope: The scope name.
-    :param name: The data identifier name.
-    :param session: The database session in use.
-    """
-    if not json_meta_implemented():
-        raise NotImplementedError
-
-    try:
-        row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
-        meta = getattr(row, 'meta')
-        return json.loads(meta) if session.bind.dialect.name in ['oracle', 'sqlite'] else meta
-    except NoResultFound:
-        # raise exception.DataIdentifierNotFound("No generic metadata found for '%(scope)s:%(name)s'" % locals())
-        return None
-# Set generic did metadata
-
-
-@transactional_session
-def _add_did_meta_json(scope, name, meta, session=None):
-    """
-    Add or update the given metadata to the given did
-
-    :param scope: the scope of the did
-    :param name: the name of the did
-    :param meta: the metadata to be added or updated
-    """
-    if not json_meta_implemented():
-        raise NotImplementedError
-
-    try:
-        row_did = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).one()
-        row_did_meta = session.query(models.DidMeta).filter_by(scope=scope, name=name).scalar()
-        if row_did_meta is None:
-            # Add metadata column to new table (if not already present)
-            row_did_meta = models.DidMeta(scope=scope, name=name)
-            row_did_meta.save(session=session, flush=True)
-
-        existing_meta = getattr(row_did_meta, 'meta')
-
-        # Oracle returns a string instead of a dict
-        if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
-            existing_meta = json.loads(existing_meta)
-
-        if existing_meta is None:
-            existing_meta = {}
-
-        for k, v in iteritems(meta):
-            existing_meta[k] = v
-
-        row_did_meta.meta = None
-        session.flush()
-
-        # Oracle insert takes a string as input
-        if session.bind.dialect.name in ['oracle', 'sqlite']:
-            existing_meta = json.dumps(existing_meta)
-
-        row_did_meta.meta = existing_meta
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % locals())
-
-
-@transactional_session
-def _delete_did_meta_json(scope, name, key, session=None):
-    """
-    Delete a key from the metadata column
-
-    :param scope: the scope of did
-    :param name: the name of the did
-    :param key: the key to be deleted
-    """
-    if not json_meta_implemented(session=session):
-        raise NotImplementedError
-
-    try:
-        row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
-        existing_meta = getattr(row, 'meta')
-        # Oracle returns a string instead of a dict
-        if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
-            existing_meta = json.loads(existing_meta)
-
-        if key not in existing_meta:
-            raise exception.KeyNotFound(key)
-
-        existing_meta.pop(key, None)
-
-        row.meta = None
-        session.flush()
-
-        # Oracle insert takes a string as input
-        if session.bind.dialect.name in ['oracle', 'sqlite']:
-            existing_meta = json.dumps(existing_meta)
-
-        row.meta = existing_meta
-    except NoResultFound:
-        raise exception.DataIdentifierNotFound("Key not found for data identifier '%(scope)s:%(name)s'" % locals())
-
-
 def _filter_by_did_meta_json(filters, query, scope=None, session=None):
     """
     Filters query according to metadata filters. The filters can be about 'hardcoded' metadata,
@@ -524,3 +588,38 @@ def _filter_by_did_meta_json(filters, query, scope=None, session=None):
     query = query.filter(tuple_(models.DataIdentifier.scope, models.DataIdentifier.name).in_(dids))
 
     return query
+
+
+def list_dids_by_hardcoded_meta():
+    pass
+
+
+def _get_generic_did_meta(scope, name, session=None):
+    if "GET" in METADATA_HANDLER.supports():
+        return METADATA_HANDLER.get_did_meta(scope, name, session=session)
+    else:
+        raise NotImplementedError
+
+
+def _set_generic_did_meta(scope, name, key, session=None):
+    if "SET" in METADATA_HANDLER.supports():
+        return METADATA_HANDLER.set_did_meta(scope, name, key, value, session=session)
+    else:
+        raise NotImplementedError
+
+
+def _delete_generic_did_meta(scope, name, key, session=None):
+    if "DELETE" in METADATA_HANDLER.supports():
+        return METADATA_HANDLER.delete_did_meta(scope, name, key, session=session)
+    else:
+        raise NotImplementedError
+
+
+def _list_dids_by_generic_meta(scope=None, filters=None, type=None, ignore_case=False, limit=None,
+                               offset=None, long=False, recursive=False, session=None):
+    if "LIST" in METADATA_HANDLER.supports():
+        return METADATA_HANDLER.list_dids(scope=scope, filters=filters, type=type,
+                                          ignore_case=ignore_case, limit=limit,
+                                          offset=offset, long=long, recursive=recursive, session=session)
+    else:
+        raise NotImplementedError

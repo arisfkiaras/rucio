@@ -1219,7 +1219,7 @@ def set_metadata(scope, name, key, value, type=None, did=None,
     :param recursive: Option to propagate the metadata change to content.
     :param session: The database session in use.
     """
-    return set_did_meta_interface(scope, name, key, value, type, did, recursive, session)
+    return set_did_meta_interface(scope, name, key, value, did, recursive, session)
 
 # Get metadata
 @read_session
