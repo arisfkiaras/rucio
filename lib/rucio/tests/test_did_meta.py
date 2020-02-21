@@ -18,7 +18,170 @@ from rucio.client.didclient import DIDClient
 from rucio.common.utils import generate_uuid as uuid
 from rucio.common.exception import DataIdentifierNotFound, KeyNotFound
 from rucio.db.sqla.session import get_session
+from rucio.common.types import InternalAccount, InternalScope
+from rucio.core.did import (list_dids, add_did, delete_dids, get_did_atime, touch_dids, attach_dids, detach_dids,
+                            get_did, get_did_access_cnt, add_did_to_followed,
+                            get_users_following_did, remove_did_from_followed)
+from rucio.common.utils import generate_uuid
+from rucio.core.did_meta import list_dids_interface, get_did_meta_interface, set_did_meta_interface
 
+class TestDidMetaHardcoded():
+
+    def test_add_did_meta(self):
+        tmp_scope = InternalScope('mock')
+        root = InternalAccount('root')
+        did_name = 'mock_did_%s' % generate_uuid()
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root)
+
+        set_did_meta_interface(scope=tmp_scope, name=did_name, key='adler32', value='0cc737ee')
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)['adler32'], '0cc737ee')
+
+    def test_get_did_meta(self):
+        tmp_scope = InternalScope('mock')
+        root = InternalAccount('root')
+        did_name = 'mock_did_%s' % generate_uuid()
+        dataset_meta = {'project': 'data12_8TeV'}
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', meta=dataset_meta, account=root)
+
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)['project'], 'data12_8TeV')
+
+    def test_list_did_meta(self):
+        dsns = []
+        tmp_scope = InternalScope('mock')
+        tmp_dsn1 = 'dsn_%s' % generate_uuid()
+        root = InternalAccount('root')
+
+        dsns.append(tmp_dsn1)
+
+        dataset_meta = {'project': 'data12_8TeV',
+                        'run_number': 400000,
+                        'stream_name': 'physics_CosmicCalo',
+                        'prod_step': 'merge',
+                        'datatype': 'NTUP_TRIG',
+                        'version': 'f392_m920',
+                        }
+
+        add_did(scope=tmp_scope, name=tmp_dsn1, type="DATASET", account=root, meta=dataset_meta)
+
+        tmp_dsn2 = 'dsn_%s' % generate_uuid()
+        dsns.append(tmp_dsn2)
+        dataset_meta['run_number'] = 400001
+        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root, meta=dataset_meta)
+
+        tmp_dsn3 = 'dsn_%s' % generate_uuid()
+        dsns.append(tmp_dsn3)
+        dataset_meta['stream_name'] = 'physics_Egamma'
+        dataset_meta['datatype'] = 'NTUP_SMWZ'
+        add_did(scope=tmp_scope, name=tmp_dsn3, type="DATASET", account=root, meta=dataset_meta)
+
+        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'version': 'f392_m920'})
+        results = []
+        for d in dids:
+            results.append(d)
+        for dsn in dsns:
+            assert_in(dsn, results)
+        dsns.remove(tmp_dsn1)
+
+        list_dids_interface()
+        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'run_number': 400001})
+        results = []
+        for d in dids:
+            results.append(d)
+        for dsn in dsns:
+            assert_in(dsn, results)
+        dsns.remove(tmp_dsn2)
+
+        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'stream_name': 'physics_Egamma', 'datatype': 'NTUP_SMWZ'})
+        results = []
+        for d in dids:
+            results.append(d)
+        for dsn in dsns:
+            assert_in(dsn, results)
+
+        # with assert_raises(KeyNotFound):
+        #     list_dids(tmp_scope, {'NotReallyAKey': 'NotReallyAValue'})
+
+class TestDidMetaJSON():
+
+    def test_add_did_meta(self):
+        tmp_scope = InternalScope('mock')
+        root = InternalAccount('root')
+        did_name = 'mock_did_%s' % generate_uuid()
+        meta_key = 'my_key_%s'  % generate_uuid()
+        meta_value = 'my_value_%s'  % generate_uuid()
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root)
+
+        set_did_meta_interface(scope=tmp_scope, name=did_name, key=meta_key, value=meta_value)
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)[meta_key], meta_value)
+
+    def test_get_did_meta(self):
+        tmp_scope = InternalScope('mock')
+        root = InternalAccount('root')
+        did_name = 'mock_did_%s' % generate_uuid()
+        meta_key = 'my_key_%s'  % generate_uuid()
+        meta_value = 'my_value_%s'  % generate_uuid()
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root)
+
+        set_did_meta_interface(scope=tmp_scope, name=did_name, key=meta_key, value=meta_value)
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)[meta_key], meta_value)
+
+    def test_list_did_meta(self):
+        tmp_scope = InternalScope('mock')
+        root = InternalAccount('root')
+
+        meta_key1 = 'my_key_%s'  % generate_uuid()
+        meta_key2 = 'my_key_%s'  % generate_uuid()
+        meta_value1 = 'my_value_%s'  % generate_uuid()
+        meta_value2 = 'my_value_%s'  % generate_uuid()
+        meta_value3 = 'my_value_%s'  % generate_uuid()
+
+        tmp_dsn1 = 'dsn_%s' % generate_uuid()
+        add_did(scope=tmp_scope, name=tmp_dsn1, type="DATASET", account=root)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn1, key=meta_key1, value=meta_value1)
+
+        tmp_dsn2 = 'dsn_%s' % generate_uuid()
+        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn2, key=meta_key1, value=meta_value2)
+
+        tmp_dsn3 = 'dsn_%s' % generate_uuid()
+        add_did(scope=tmp_scope, name=tmp_dsn3, type="DATASET", account=root)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn3, key=meta_key2, value=meta_value1)
+
+        tmp_dsn4 = 'dsn_%s' % generate_uuid()
+        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn4, key=meta_key1, value=meta_value1)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn4, key=meta_key2, value=meta_value2)
+
+
+        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value1})
+        results = []
+        for d in dids:
+            results.append(d)
+        assert_in([tmp_dsn1, tmp_dsn4], results)
+        assert_equal(len(results), 2)
+
+        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value2})
+        results = []
+        for d in dids:
+            results.append(d)
+        assert_in([tmp_dsn2], results)
+        assert_equal(len(results), 1)
+
+        dids = list_dids_interface(tmp_scope, {meta_key2: meta_value1})
+        results = []
+        for d in dids:
+            results.append(d)
+        assert_in([tmp_dsn3], results)
+        assert_equal(len(results), 1)
+    
+        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value1, meta_key2: meta_value2})
+        results = []
+        for d in dids:
+            results.append(d)
+        assert_in([tmp_dsn4], results)
+        assert_equal(len(results), 1)
+        # with assert_raises(KeyNotFound):
+        #     list_dids(tmp_scope, {'NotReallyAKey': 'NotReallyAValue'})
 
 class TestDidMetaClient():
 
