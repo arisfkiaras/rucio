@@ -142,7 +142,7 @@ def set_did_meta(scope, name, key, value, recursive=False, session=None):
             with_hint(models.DataIdentifier, "INDEX(DIDS DIDS_PK)", 'oracle').one()
     except NoResultFound:
         raise exception.DataIdentifierNotFound("Data identifier '%s:%s' not found" % (scope, name))
-
+    print(rowcount.name)
     if key == 'lifetime':
         try:
             expired_at = None
@@ -165,7 +165,8 @@ def set_did_meta(scope, name, key, value, recursive=False, session=None):
         session.query(models.DataIdentifierAssociation).filter_by(child_scope=scope, child_name=name, child_type=DIDType.FILE).update({key: value}, synchronize_session=False)
         session.query(models.Request).filter_by(scope=scope, name=name).update({key: value}, synchronize_session=False)
         session.query(models.RSEFileAssociation).filter_by(scope=scope, name=name).update({key: value}, synchronize_session=False)
-
+        print("asd")
+        print(session.query(models.DataIdentifier).filter_by(scope=scope, name=name, did_type=DIDType.FILE).count())
     elif key == 'bytes':
         rowcount = session.query(models.DataIdentifier).filter_by(scope=scope, name=name, did_type=DIDType.FILE).update({key: value}, synchronize_session=False)
         session.query(models.DataIdentifierAssociation).filter_by(child_scope=scope, child_name=name, child_type=DIDType.FILE).update({key: value}, synchronize_session=False)

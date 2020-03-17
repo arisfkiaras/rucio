@@ -82,8 +82,7 @@ def get_did_meta(scope, name, session=None):
         meta = getattr(row, 'meta')
         return json.loads(meta) if session.bind.dialect.name in ['oracle', 'sqlite'] else meta
     except NoResultFound:
-        # raise exception.DataIdentifierNotFound("No generic metadata found for '%(scope)s:%(name)s'" % locals())
-        return None
+        raise exception.DataIdentifierNotFound("No generic metadata found for '%(scope)s:%(name)s'" % locals())
 
 def set_did_meta(scope, name, key, value, recursive, session=None):
     """
@@ -99,6 +98,7 @@ def set_did_meta(scope, name, key, value, recursive, session=None):
         raise NotImplementedError
 
     try:
+        row_did = session.query(models.DataIdentifier).filter_by(scope=scope, name=name).one()
         row_did_meta = session.query(models.DidMeta).filter_by(scope=scope, name=name).scalar()
         if row_did_meta is None:
             # Add metadata column to new table (if not already present)
@@ -128,9 +128,49 @@ def set_did_meta(scope, name, key, value, recursive, session=None):
         row_did_meta.save(session=session, flush=True)
     except NoResultFound:
         raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % locals())
+    # except Exception as e:
+    #     print str(e)
+
+def delete_did_meta(scope, name, key, session=None):
+    """
+    Delete a key from the metadata column
+
+    :param scope: the scope of did
+    :param name: the name of the did
+    :param key: the key to be deleted
+    """
+    if not json_implemented(session):
+        raise NotImplementedError
+
+    try:
+        row = session.query(models.DidMeta).filter_by(scope=scope, name=name).one()
+        existing_meta = getattr(row, 'meta')
+        # Oracle returns a string instead of a dict
+        if session.bind.dialect.name in ['oracle', 'sqlite'] and existing_meta is not None:
+            existing_meta = json.loads(existing_meta)
+
+        if key not in existing_meta:
+            raise exception.KeyNotFound(key)
+
+        existing_meta.pop(key, None)
+
+        row.meta = None
+        session.flush()
+
+        # Oracle insert takes a string as input
+        if session.bind.dialect.name in ['oracle', 'sqlite']:
+            existing_meta = json.dumps(existing_meta)
+
+        row.meta = existing_meta
+    except NoResultFound:
+        raise exception.DataIdentifierNotFound("Key not found for data identifier '%(scope)s:%(name)s'" % locals())
+
 
 def list_dids(scope, filters, type='collection', ignore_case=False, limit=None,
               offset=None, long=False, recursive=False, session=None):
+
+    if session is None:
+        session = se.get_session()    
     # Currently for sqlite only add, get and delete is implemented.
     if session.bind.dialect.name == 'sqlite':
         raise NotImplementedError
@@ -151,4 +191,9 @@ def list_dids(scope, filters, type='collection', ignore_case=False, limit=None,
     dids = list()
     for row in query.yield_per(10):
         dids.append({'scope': row.scope, 'name': row.name})
+
+    if len(dids) < 1:
+        raise exception.KeyNotFound("RAAAAAAAAAAAAAAAA")
+
     return dids
+

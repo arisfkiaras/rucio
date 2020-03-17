@@ -34,19 +34,18 @@ class TestDidMetaHardcoded():
         tmp_scope = InternalScope('mock')
         root = InternalAccount('root')
         did_name = 'mock_did_%s' % generate_uuid()
-        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root)
-
-        set_did_meta_interface(scope=tmp_scope, name=did_name, key='adler32', value='0cc737ee')
-        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)['adler32'], '0cc737ee')
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=did_name, key='project', value='data12_8TeV', session=session)
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name, session=session)['project'], 'data12_8TeV')
 
     def test_get_did_meta(self):
         tmp_scope = InternalScope('mock')
         root = InternalAccount('root')
         did_name = 'mock_did_%s' % generate_uuid()
         dataset_meta = {'project': 'data12_8TeV'}
-        add_did(scope=tmp_scope, name=did_name, type='DATASET', meta=dataset_meta, account=root)
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', meta=dataset_meta, account=root, session=session)
 
-        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)['project'], 'data12_8TeV')
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name, session=session)['project'], 'data12_8TeV')
 
     def test_list_did_meta(self):
         dsns = []
@@ -64,20 +63,20 @@ class TestDidMetaHardcoded():
                         'version': 'f392_m920',
                         }
 
-        add_did(scope=tmp_scope, name=tmp_dsn1, type="DATASET", account=root, meta=dataset_meta)
+        add_did(scope=tmp_scope, name=tmp_dsn1, type="DATASET", account=root, meta=dataset_meta, session=session)
 
         tmp_dsn2 = 'dsn_%s' % generate_uuid()
         dsns.append(tmp_dsn2)
         dataset_meta['run_number'] = 400001
-        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root, meta=dataset_meta)
+        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root, meta=dataset_meta, session=session)
 
         tmp_dsn3 = 'dsn_%s' % generate_uuid()
         dsns.append(tmp_dsn3)
         dataset_meta['stream_name'] = 'physics_Egamma'
         dataset_meta['datatype'] = 'NTUP_SMWZ'
-        add_did(scope=tmp_scope, name=tmp_dsn3, type="DATASET", account=root, meta=dataset_meta)
+        add_did(scope=tmp_scope, name=tmp_dsn3, type="DATASET", account=root, meta=dataset_meta, session=session)
 
-        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'version': 'f392_m920'})
+        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'version': 'f392_m920'}, session=session)
         results = []
         for d in dids:
             results.append(d)
@@ -85,8 +84,7 @@ class TestDidMetaHardcoded():
             assert_in(dsn, results)
         dsns.remove(tmp_dsn1)
 
-        list_dids_interface()
-        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'run_number': 400001})
+        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'run_number': 400001}, session=session)
         results = []
         for d in dids:
             results.append(d)
@@ -94,7 +92,7 @@ class TestDidMetaHardcoded():
             assert_in(dsn, results)
         dsns.remove(tmp_dsn2)
 
-        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'stream_name': 'physics_Egamma', 'datatype': 'NTUP_SMWZ'})
+        dids = list_dids(tmp_scope, {'project': 'data12_8TeV', 'stream_name': 'physics_Egamma', 'datatype': 'NTUP_SMWZ'}, session=session)
         results = []
         for d in dids:
             results.append(d)

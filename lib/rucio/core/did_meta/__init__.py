@@ -115,11 +115,11 @@ def delete_did_meta_interface(scope, name, key, session=None):
     :param key: Key of the metadata.
     """
 
-    if is_hardcoded(key):
+    if hardcoded_handler.is_hardcoded(key):
         pass
     else:
-        _delete_did_meta_json(scope, name, key, session=session)
-
+        generic_handler.delete_did_meta(scope, name, key, session=session)
+        print("deleted")
 
 def list_dids_interface(scope=None, filters=None, type=None, ignore_case=False, limit=None,
                         offset=None, long=False, recursive=False, session=None):
