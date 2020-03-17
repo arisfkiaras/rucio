@@ -25,6 +25,9 @@ from rucio.core.did import (list_dids, add_did, delete_dids, get_did_atime, touc
 from rucio.common.utils import generate_uuid
 from rucio.core.did_meta import list_dids_interface, get_did_meta_interface, set_did_meta_interface
 
+session = get_session()
+
+
 class TestDidMetaHardcoded():
 
     def test_add_did_meta(self):
@@ -109,10 +112,12 @@ class TestDidMetaJSON():
         did_name = 'mock_did_%s' % generate_uuid()
         meta_key = 'my_key_%s'  % generate_uuid()
         meta_value = 'my_value_%s'  % generate_uuid()
-        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root)
+        add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=did_name, key=meta_key, value=meta_value, session=session)
 
-        set_did_meta_interface(scope=tmp_scope, name=did_name, key=meta_key, value=meta_value)
-        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)[meta_key], meta_value)
+        # session.commit()
+
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name, filter='JSON', session=session)[meta_key], meta_value)
 
     def test_get_did_meta(self):
         tmp_scope = InternalScope('mock')
@@ -121,9 +126,8 @@ class TestDidMetaJSON():
         meta_key = 'my_key_%s'  % generate_uuid()
         meta_value = 'my_value_%s'  % generate_uuid()
         add_did(scope=tmp_scope, name=did_name, type='DATASET', account=root)
-
-        set_did_meta_interface(scope=tmp_scope, name=did_name, key=meta_key, value=meta_value)
-        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name)[meta_key], meta_value)
+        set_did_meta_interface(scope=tmp_scope, name=did_name, key=meta_key, value=meta_value, session=session)
+        assert_equal(get_did_meta_interface(scope=tmp_scope, name=did_name, filter='JSON', session=session)[meta_key], meta_value)
 
     def test_list_did_meta(self):
         tmp_scope = InternalScope('mock')
@@ -136,52 +140,57 @@ class TestDidMetaJSON():
         meta_value3 = 'my_value_%s'  % generate_uuid()
 
         tmp_dsn1 = 'dsn_%s' % generate_uuid()
-        add_did(scope=tmp_scope, name=tmp_dsn1, type="DATASET", account=root)
-        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn1, key=meta_key1, value=meta_value1)
+        add_did(scope=tmp_scope, name=tmp_dsn1, type="DATASET", account=root, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn1, key=meta_key1, value=meta_value1, session=session)
 
         tmp_dsn2 = 'dsn_%s' % generate_uuid()
-        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root)
-        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn2, key=meta_key1, value=meta_value2)
+        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn2, key=meta_key1, value=meta_value2, session=session)
 
         tmp_dsn3 = 'dsn_%s' % generate_uuid()
-        add_did(scope=tmp_scope, name=tmp_dsn3, type="DATASET", account=root)
-        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn3, key=meta_key2, value=meta_value1)
+        add_did(scope=tmp_scope, name=tmp_dsn3, type="DATASET", account=root, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn3, key=meta_key2, value=meta_value1, session=session)
 
         tmp_dsn4 = 'dsn_%s' % generate_uuid()
-        add_did(scope=tmp_scope, name=tmp_dsn2, type="DATASET", account=root)
-        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn4, key=meta_key1, value=meta_value1)
-        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn4, key=meta_key2, value=meta_value2)
+        add_did(scope=tmp_scope, name=tmp_dsn4, type="DATASET", account=root, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn4, key=meta_key1, value=meta_value1, session=session)
+        set_did_meta_interface(scope=tmp_scope, name=tmp_dsn4, key=meta_key2, value=meta_value2, session=session)
 
 
-        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value1})
+        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value1}, session=session)
         results = []
         for d in dids:
             results.append(d)
-        assert_in([tmp_dsn1, tmp_dsn4], results)
+        # results_clean = ['%s:%s' % (r['scope'], r['name']) for r in results]
+        # print(results_clean)
+        # assert_equal([{'scope': tmp_scope, 'name': u'%s' % tmp_dsn1}, {'scope': tmp_scope, 'name': u'%s' % tmp_dsn4}], results)
+        assert_equal([{'scope': tmp_scope, 'name': tmp_dsn1}, {'scope': tmp_scope, 'name': tmp_dsn4}], results)
         assert_equal(len(results), 2)
 
-        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value2})
+        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value2}, session=session)
         results = []
         for d in dids:
             results.append(d)
-        assert_in([tmp_dsn2], results)
+        assert_equal([{'scope': (tmp_scope), 'name':str(tmp_dsn2)}], results)
         assert_equal(len(results), 1)
 
-        dids = list_dids_interface(tmp_scope, {meta_key2: meta_value1})
+        dids = list_dids_interface(tmp_scope, {meta_key2: meta_value1}, session=session)
         results = []
         for d in dids:
             results.append(d)
-        assert_in([tmp_dsn3], results)
+        assert_equal([{'scope': (tmp_scope), 'name':tmp_dsn3}], results)
         assert_equal(len(results), 1)
-    
-        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value1, meta_key2: meta_value2})
+
+        dids = list_dids_interface(tmp_scope, {meta_key1: meta_value1, meta_key2: meta_value2}, session=session)
         results = []
         for d in dids:
             results.append(d)
-        assert_in([tmp_dsn4], results)
+        assert_equal([{'scope': (tmp_scope), 'name':tmp_dsn4}], results)
         assert_equal(len(results), 1)
+
         # with assert_raises(KeyNotFound):
         #     list_dids(tmp_scope, {'NotReallyAKey': 'NotReallyAValue'})
+        session.commit()
 
 class TestDidMetaClient():
 
