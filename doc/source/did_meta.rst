@@ -22,6 +22,7 @@ Fixed metadata
 -------------------
 Those metadata were first introduced by the ATLAS experiment and are "hardcoded" into Rucio. Most of them have to do with core information about a did such as the checksum and lifespan.
 The performance of fixed metadata is optimal out of the box and can not be overwritten by experiment-specific modules. Access to those metadata from the CLI can be disabled though.
+
 For the full list of "fixed" metadata you can have a look here [Link to hardcoded metadata list]
 
 Configuration options for fixed metadata are::
