@@ -12,18 +12,21 @@
 #
 # PY3K COMPATIBLE
 
-from nose.tools import assert_equal, assert_is_instance, assert_in, assert_raises
+from nose.tools import assert_equal, assert_is_instance, assert_in, assert_raises, assert_true
 
 from rucio.client.didclient import DIDClient
 from rucio.common.utils import generate_uuid as uuid
-from rucio.common.exception import DataIdentifierNotFound, KeyNotFound
+from rucio.common.exception import DataIdentifierNotFound, KeyNotFound, UnsupportedKeyType
 from rucio.db.sqla.session import get_session
 from rucio.common.types import InternalAccount, InternalScope
 from rucio.core.did import (list_dids, add_did, delete_dids, get_did_atime, touch_dids, attach_dids, detach_dids,
                             get_did, get_did_access_cnt, add_did_to_followed,
                             get_users_following_did, remove_did_from_followed)
 from rucio.common.utils import generate_uuid
-from rucio.core.did_meta import list_dids_interface, get_did_meta_interface, set_did_meta_interface
+from rucio.core.did_meta import (list_dids_interface, get_did_meta_interface, set_did_meta_interface,
+                                add_key_interface, del_key_interface, list_keys_interface, validate_meta_interface)
+from rucio.db.sqla.constants import DIDType, KeyType
+from rucio.db.sqla import models
 
 session = get_session()
 
@@ -162,7 +165,7 @@ class TestDidMetaJSON():
         # results_clean = ['%s:%s' % (r['scope'], r['name']) for r in results]
         # print(results_clean)
         # assert_equal([{'scope': tmp_scope, 'name': u'%s' % tmp_dsn1}, {'scope': tmp_scope, 'name': u'%s' % tmp_dsn4}], results)
-        assert_equal([{'scope': tmp_scope, 'name': tmp_dsn1}, {'scope': tmp_scope, 'name': tmp_dsn4}], results)
+        assert_equal(sorted([{'scope': tmp_scope, 'name': tmp_dsn1}, {'scope': tmp_scope, 'name': tmp_dsn4}]), sorted(results))
         assert_equal(len(results), 2)
 
         dids = list_dids_interface(tmp_scope, {meta_key1: meta_value2}, session=session)
@@ -311,3 +314,38 @@ class TestDidMetaClient():
             # Since there is no cleanup and key is not uuid, (len(dids), 3) would fail on second run.
             # assert_equal(len(dids), 3)
             assert_in({'scope': 'mock', 'name': did2}, dids)
+
+class TestDidKey():
+    
+    def test_add_key(self):
+        """ META (CORE): Add a new key """
+        types = [{'type': DIDType.FILE, 'expected': KeyType.FILE},
+                 {'type': DIDType.CONTAINER, 'expected': KeyType.CONTAINER},
+                 {'type': DIDType.DATASET, 'expected': KeyType.DATASET},
+                 {'type': KeyType.ALL, 'expected': KeyType.ALL},
+                 {'type': KeyType.DERIVED, 'expected': KeyType.DERIVED},
+                 {'type': KeyType.FILE, 'expected': KeyType.FILE},
+                 {'type': KeyType.COLLECTION, 'expected': KeyType.COLLECTION},
+                 {'type': KeyType.CONTAINER, 'expected': KeyType.CONTAINER},
+                 {'type': KeyType.DATASET, 'expected': KeyType.DATASET},
+                 {'type': 'FILE', 'expected': KeyType.FILE},
+                 {'type': 'ALL', 'expected': KeyType.ALL},
+                 {'type': 'COLLECTION', 'expected': KeyType.COLLECTION},
+                 {'type': 'DATASET', 'expected': KeyType.DATASET},
+                 {'type': 'D', 'expected': KeyType.DATASET},
+                 {'type': 'FILE', 'expected': KeyType.FILE},
+                 {'type': 'F', 'expected': KeyType.FILE},
+                 {'type': 'DERIVED', 'expected': KeyType.DERIVED},
+                 {'type': 'C', 'expected': KeyType.CONTAINER}]
+
+        for key_type in types:
+            key_name = 'datatype%s' % str(uuid())
+            add_key_interface(key_name, key_type['type'])
+            stored_key_type = session.query(models.DIDKey).filter_by(key=key_name).one()['key_type']
+            assert_true(stored_key_type, key_type['expected'])
+
+        with assert_raises(UnsupportedKeyType):
+            add_key_interface('datatype_generic', DIDType.ARCHIVE)
+
+        with assert_raises(UnsupportedKeyType):
+            add_key_interface('datatype_generic', 'A')

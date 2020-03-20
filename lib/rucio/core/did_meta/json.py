@@ -14,11 +14,8 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import not_, func
 from sqlalchemy.sql.expression import bindparam, case, text, Insert, select, true
 
-import rucio.core.rule
-import rucio.core.replica  # import add_replicas
 
 from rucio.common import exception
-from rucio.common.utils import str_to_date, is_archive, chunks
 from rucio.core import account_counter, rse_counter, config as config_core
 from rucio.core.message import add_message
 from rucio.core.monitor import record_timer_block, record_counter
@@ -29,16 +26,6 @@ from rucio.db.sqla.constants import DIDType, DIDReEvaluation, DIDAvailability, R
 from rucio.db.sqla.enum import EnumSymbol
 from rucio.db.sqla.session import read_session, transactional_session, stream_session
 
-SUPPORTED_OPERATIONS = [
-    "SET",
-    "GET",
-    "LIST",
-    "DELETE",
-    "QUERY",
-    "COMPARATORS",
-    "FILTER_QUERY",
-    "LONG"
-]
 
 def json_implemented(session = None):
     """
@@ -58,11 +45,6 @@ def json_implemented(session = None):
     #TODO: check for the table here
     return True
 
-def supports(session=None):
-    if json_implemented(session):
-        return SUPPORTED_OPERATIONS
-    else:
-        return []
 
 def get_did_meta(scope, name, session=None):
     """
@@ -83,6 +65,7 @@ def get_did_meta(scope, name, session=None):
         return json.loads(meta) if session.bind.dialect.name in ['oracle', 'sqlite'] else meta
     except NoResultFound:
         raise exception.DataIdentifierNotFound("No generic metadata found for '%(scope)s:%(name)s'" % locals())
+
 
 def set_did_meta(scope, name, key, value, recursive, session=None):
     """
@@ -130,6 +113,7 @@ def set_did_meta(scope, name, key, value, recursive, session=None):
         raise exception.DataIdentifierNotFound("Data identifier '%(scope)s:%(name)s' not found" % locals())
     # except Exception as e:
     #     print str(e)
+
 
 def delete_did_meta(scope, name, key, session=None):
     """
@@ -196,4 +180,5 @@ def list_dids(scope, filters, type='collection', ignore_case=False, limit=None,
         raise exception.KeyNotFound("RAAAAAAAAAAAAAAAA")
 
     return dids
+
 

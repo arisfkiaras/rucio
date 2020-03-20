@@ -28,8 +28,6 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import not_, func
 from sqlalchemy.sql.expression import bindparam, case, text, Insert, select, true
 
-import rucio.core.rule
-import rucio.core.replica  # import add_replicas
 
 from rucio.common import exception
 from rucio.common.utils import str_to_date, is_archive, chunks
@@ -142,7 +140,7 @@ def set_did_meta(scope, name, key, value, recursive=False, session=None):
             with_hint(models.DataIdentifier, "INDEX(DIDS DIDS_PK)", 'oracle').one()
     except NoResultFound:
         raise exception.DataIdentifierNotFound("Data identifier '%s:%s' not found" % (scope, name))
-    print(rowcount.name)
+
     if key == 'lifetime':
         try:
             expired_at = None

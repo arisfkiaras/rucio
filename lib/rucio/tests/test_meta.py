@@ -136,7 +136,7 @@ class TestMetaCore():
             assert_true(stored_key_type, key_type['expected'])
 
         with assert_raises(UnsupportedKeyType):
-            add_key('datatype', DIDType.ARCHIVE)
+            add_key('datatype_generic', DIDType.ARCHIVE)
 
         with assert_raises(UnsupportedKeyType):
-            add_key('datatype', 'A')
+            add_key('datatype_generic', 'A')
