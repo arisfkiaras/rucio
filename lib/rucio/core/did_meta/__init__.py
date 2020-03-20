@@ -44,7 +44,6 @@ if config.config_has_section('metadata'):
 else:
     METADATA_HANDLER = FALLBACK_METADATA_HANDLER
 
-
 if METADATA_HANDLER.lower() == 'json':
     METADATA_HANDLER = 'rucio.core.did_meta.json'
 
@@ -169,9 +168,9 @@ def add_key_interface(key, key_type='DATASET', value_type=None, value_regexp=Non
     :param value_regexp: the regular expression that values should match, if defined.
     :param session: The database session in use.
     """
-    if hardcoded_handler.is_hardcoded(key):
-        # Hardcoded metadata do not support locking at the moment.
-        raise NotImplementedError
+    # if hardcoded_handler.is_hardcoded(key):
+    #     # Hardcoded metadata do not support locking at the moment.
+    #     raise NotImplementedError
 
     # If generic_handlers supports fixed keys will pass the argument, else will manage using the DIDMeta
     if hasattr(generic_handler, 'add_key'):
