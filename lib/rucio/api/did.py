@@ -63,6 +63,34 @@ def list_dids(scope, filters, type='collection', ignore_case=False, limit=None, 
         yield api_update_return_dict(d)
 
 
+def list_dids_extended(scope, filters, type='collection', ignore_case=False, limit=None, offset=None, long=False, recursive=False):
+    """
+    List dids in a scope.
+
+    :param scope: The scope name.
+    :param pattern: The wildcard pattern.
+    :param type:  The type of the did: all(container, dataset, file), collection(dataset or container), dataset, container
+    :param ignore_case: Ignore case distinctions.
+    :param limit: The maximum number of DIDs returned.
+    :param offset: Offset number.
+    :param long: Long format option to display more information for each DID.
+    :param recursive: Recursively list DIDs content.
+    """
+    validate_schema(name='did_filters', obj=filters)
+    scope = InternalScope(scope)
+
+    if 'account' in filters:
+        filters['account'] = InternalAccount(filters['account'])
+    if 'scope' in filters:
+        filters['scope'] = InternalScope(filters['scope'])
+
+    result = did.list_dids_extended(scope=scope, filters=filters, type=type, ignore_case=ignore_case,
+                                    limit=limit, offset=offset, long=long, recursive=recursive)
+
+    for d in result:
+        yield api_update_return_dict(d)
+
+
 def add_did(scope, name, type, issuer, account=None, statuses={}, meta={}, rules=[], lifetime=None, dids=[], rse=None):
     """
     Add data did.
@@ -365,7 +393,7 @@ def set_metadata(scope, name, key, value, issuer, recursive=False):
     return did.set_metadata(scope=scope, name=name, key=key, value=value, recursive=recursive)
 
 
-def get_metadata(scope, name):
+def get_metadata(scope, name, plugin='DID_COLUMN'):
     """
     Get data identifier metadata
 
@@ -375,7 +403,7 @@ def get_metadata(scope, name):
 
     scope = InternalScope(scope)
 
-    d = did.get_metadata(scope=scope, name=name)
+    d = did.get_metadata(scope=scope, name=name, plugin=plugin)
     return api_update_return_dict(d)
 
 
@@ -394,32 +422,7 @@ def get_metadata_bulk(dids, session=None):
         yield api_update_return_dict(met)
 
 
-def get_did_meta(scope, name):
-    """
-    Get all metadata for a given did
-
-    :param scope: the scope of did
-    :param name: the name of the did
-    """
-
-    scope = InternalScope(scope)
-    return did.get_did_meta(scope=scope, name=name)
-
-
-def add_did_meta(scope, name, meta):
-    """
-    Add or update the given metadata to the given did
-
-    :param scope: the scope of the did
-    :param name: the name of the did
-    :param meta: the metadata to be added or updated
-    """
-
-    scope = InternalScope(scope)
-    return did.add_did_meta(scope=scope, name=name, meta=meta)
-
-
-def delete_did_meta(scope, name, key):
+def delete_metadata(scope, name, key):
     """
     Delete a key from the metadata column
 
@@ -429,7 +432,43 @@ def delete_did_meta(scope, name, key):
     """
 
     scope = InternalScope(scope)
-    return did.delete_did_meta(scope=scope, name=name, key=key)
+    return did.delete_metadata(scope=scope, name=name, key=key)
+# def get_did_meta(scope, name):
+#     """
+#     Get all metadata for a given did
+
+#     :param scope: the scope of did
+#     :param name: the name of the did
+#     """
+
+#     scope = InternalScope(scope)
+#     return did.get_did_meta(scope=scope, name=name)
+
+
+# def add_did_meta(scope, name, meta):
+#     """
+#     Add or update the given metadata to the given did
+
+#     :param scope: the scope of the did
+#     :param name: the name of the did
+#     :param meta: the metadata to be added or updated
+#     """
+
+#     scope = InternalScope(scope)
+#     return did.add_did_meta(scope=scope, name=name, meta=meta)
+
+
+# def delete_did_meta(scope, name, key):
+#     """
+#     Delete a key from the metadata column
+
+#     :param scope: the scope of did
+#     :param name: the name of the did
+#     :param key: the key to be deleted
+#     """
+
+#     scope = InternalScope(scope)
+#     return did.delete_did_meta(scope=scope, name=name, key=key)
 
 
 def list_dids_by_meta(scope, select):
