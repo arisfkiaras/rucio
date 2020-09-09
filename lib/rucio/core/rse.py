@@ -1338,7 +1338,7 @@ def add_qos_policy(rse_id, qos_policy, session=None):
             raise exception.Duplicate('QoS policy %s already exists!' % qos_policy)
     except DatabaseError as error:
         raise exception.RucioException(error.args)
-
+    print(qos_policy)
     return True
 
 
@@ -1380,5 +1380,4 @@ def list_qos_policies(rse_id, session=None):
             qos_policies.append(qos_policy[0])
     except DatabaseError as error:
         raise exception.RucioException(error.args)
-
     return qos_policies
