@@ -35,7 +35,7 @@ from six import add_metaclass
 from rucio.common import schema
 from rucio.common.config import config_get
 from rucio.common.exception import InvalidRSEExpression, RSEBlacklisted
-from rucio.core.rse import list_rses, get_rses_with_attribute, get_rse_attribute
+from rucio.core.rse import list_rses, get_rses_with_attribute, get_rse_attribute, list_qos_policies
 from rucio.db.sqla.session import transactional_session
 
 
@@ -55,7 +55,7 @@ REGION = make_region().configure('dogpile.cache.memcached',
 
 
 @transactional_session
-def parse_expression(expression, filter=None, session=None):
+def parse_expression(expression, filter=None, qos_policy=None, session=None):
     """
     Parse a RSE expression and return the list of RSE dictionaries.
 
@@ -109,18 +109,26 @@ def parse_expression(expression, filter=None, session=None):
         raise InvalidRSEExpression('RSE Expression resulted in an empty set.')
 
     # Filter
-    final_result = []
+    filtered_result = []
     if filter:
         for rse in vo_result:
             if filter.get('availability_write', False):
                 if rse.get('availability') & 2:
-                    final_result.append(rse)
-        if not final_result:
+                    filtered_result.append(rse)
+        if not filtered_result:
             raise RSEBlacklisted('RSE excluded due to write blacklisting.')
     else:
-        final_result = vo_result
+        filtered_result = vo_result
 
-    # final_result = [{rse-info}]
+    final_result = []
+
+    if qos_policy:
+        for rse in filtered_result:
+            if qos_policy in list_qos_policies(rse.get('id'), session=session):
+                final_result.append(rse)
+    else:
+        final_result = filtered_result
+
     return final_result
 
 

@@ -47,6 +47,10 @@ def attribute_name_generator(size=10):
     return ''.join(choice(ascii_uppercase)).join(choice(ascii_lowercase) for x in range(size - 1))
 
 
+def qos_policy_generator(size=10):
+    return 'qos_policy_' + ''.join(choice(ascii_uppercase) for x in range(size))
+
+
 class TestRSEExpressionParserCore(unittest.TestCase):
 
     def setUp(self):
@@ -227,6 +231,29 @@ class TestRSEExpressionParserCore(unittest.TestCase):
         value = sorted([t_rse['id'] for t_rse in rse_expression_parser.parse_expression("%s>30" % self.attribute_numeric, **self.filter)])
         expected = sorted([self.rse4_id, self.rse5_id])
         assert value == expected
+
+    def test_qos_policy_filtering(self):
+        """ RSE_EXPRESSION_PARSER (CORE) Test QOS Policy filtering """
+        rse_name = rse_name_generator()
+        rse_id = rse.add_rse(rse_name, **self.vo)
+        tag = tag_generator()
+        qos_policy = qos_policy_generator()
+        rse.add_rse_attribute(rse_id, tag, True)
+        rse.update_rse(rse_id, {'availability_write': True})
+        rse.add_qos_policy(rse_id, qos_policy)
+
+        # Search for QoS Policy
+        # assert_equal([t_rse['id'] for t_rse in rse_expression_parser.parse_expression('*', self.filter['filter'], qos_policy=qos_policy)], [rse_id])
+        value = [t_rse['id'] for t_rse in rse_expression_parser.parse_expression('*', self.filter['filter'], qos_policy=qos_policy)]
+        expected = rse_id
+        assert value == expected
+
+        # Combined Searches
+        # assert_equal([t_rse['id'] for t_rse in rse_expression_parser.parse_expression(tag, self.filter['filter'], qos_policy=qos_policy)], [rse_id])
+
+        # assert_raises(RSEBlacklisted, rse_expression_parser.parse_expression('*', self.filter['filter'], qos_policy='not_existing'))
+
+        # assert_equal([t_rse['id'] for t_rse in rse_expression_parser.parse_expression(tag, filter=self.filter, qos_policy='default')], [rse_id])
 
 
 class TestRSEExpressionParserClient(unittest.TestCase):
